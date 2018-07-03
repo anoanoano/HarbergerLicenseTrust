@@ -40,15 +40,15 @@ contract ERC721Token is ERC721, ERC721BasicToken {
   /** STRUCTS **/
   struct Harlic {
      uint256 tokenID;
-     uint256 turnoverRate; //per year
-     uint256 harlicValue; //ether
-     uint256 publicEquity;
+     uint256 turnoverRate; //turnovers per year/100
+     uint256 harlicValue; //in ether
+     uint256 publicEquity; //in wei
      address privateRentier;
   }
 
   struct Taxlog {
      uint256 tokenID;
-     uint256 paidTaxes;
+     uint256 paidTaxes; //in wei
      uint256[] dateSeries; //dates on which value adjusted since last tax payment
      uint256[] harlicValueSeries; //values in each period
 
@@ -219,10 +219,11 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     uint256 _tokenId,
     uint256 _turnoverRate,
     uint256 _harlicValue,
-    uint256 _publicEquity,
-    address _privateRentier) public returns (bool) {
+    uint256 _publicEquity, //should be zero unless user donating to public
+    address _privateRentier,
+    string _tokenURI) public returns (bool) {
 
-    require(_turnoverRate > 0 && _turnoverRate < 100); // require percentage
+    require(_turnoverRate >= 0); // as percentage
     require(_publicEquity >= 0 && _publicEquity <= 100); // require percentage
 
     Harlic memory _harlic = Harlic({
@@ -249,6 +250,7 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     tokenHarlic[_tokenId] = harlics.length - 1; //make record of associated harlic
 
     _mint(_to, _tokenId); //create token
+    _setTokenURI(_tokenId, _tokenURI); //set URI
 
   }
 
@@ -261,12 +263,13 @@ contract ERC721Token is ERC721, ERC721BasicToken {
 
     /*update self-assessed value*/
     uint256 tokenIndex = allTokensIndex[_tokenId];
+    harlics[tokenIndex].harlicValue = _value;
     taxlogs[tokenIndex].harlicValueSeries.push(_value);
     taxlogs[tokenIndex].dateSeries.push(now);
 
   }
 
-  function calculateTax(uint256 _tokenId) public returns (uint256) {
+  function calculateTax(uint256 _tokenId) public view returns (uint256) {
 
     /*tax calculation, working*/
     require(exists(_tokenId) == true);
@@ -283,7 +286,7 @@ contract ERC721Token is ERC721, ERC721BasicToken {
             SafeMath.sub(taxlogs[tokenIndex].dateSeries[i+1], taxlogs[tokenIndex].dateSeries[i]); // in seconds
         uint256 taxRate = SafeMath.div(SafeMath.div(SafeMath.mul(harlics[tokenIndex].turnoverRate, periodValuation),
             100),
-            31536000); //divide rate into seconds in a year and multiply by valuation for per second tax
+            31536000); //(turnoverRate/100 times periodValuation) divided by seconds in a year: yields per-second tax
         allTimeTax += SafeMath.mul(taxRate, periodLength);
 
         //taxR += taxRate;
@@ -294,6 +297,34 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     return (allTimeTax);
   }
 
+    function calculateTaxTesting(uint256 _tokenId) public view returns (uint256) {
+
+    /*tax calculation, working*/
+    require(exists(_tokenId) == true);
+    uint256 tokenIndex = allTokensIndex[_tokenId];
+    uint256 allTimeTax;
+
+    //uint256 taxR;
+    //uint256 periodL;
+    //uint256 periodV;
+
+    for (uint i = 0; i <= taxlogs[tokenIndex].harlicValueSeries.length-2; i++) {
+        uint256 periodValuation = SafeMath.mul(taxlogs[tokenIndex].harlicValueSeries[i], 1000000000000000000);
+        uint256 periodLength =
+            SafeMath.sub(taxlogs[tokenIndex].dateSeries[i+1], taxlogs[tokenIndex].dateSeries[i]); // in seconds
+        uint256 taxRate = SafeMath.div(SafeMath.div(SafeMath.mul(harlics[tokenIndex].turnoverRate, periodValuation),
+            100),
+            31536000); //(turnoverRate/100 times periodValuation) divided by seconds in a year: yields per-second tax
+        allTimeTax += SafeMath.mul(taxRate, periodLength);
+
+        //taxR += taxRate;
+        //periodL += periodLength;
+        //periodV += periodValuation;
+
+    }
+    return (taxRate);
+  }
+
   function payTax (uint256 _tokenId)
     public payable returns (uint256) {
 
@@ -302,14 +333,69 @@ contract ERC721Token is ERC721, ERC721BasicToken {
         uint256 paidTaxes = taxlogs[index].paidTaxes;
         uint256 owedTaxes = SafeMath.sub(allTimeTax, paidTaxes); //doing anything with this var?
 
-        taxlogs[index].paidTaxes += msg.value;
+        require(msg.value <= owedTaxes);
 
+        taxlogs[index].paidTaxes += msg.value;
 
     }
 
-  function acquireToken () public payable returns (bool) {
+  function acquireToken (uint256 _tokenId)
+    public payable returns (bool) {
+        confiscateTokenPublicEquity(_tokenId); //update publicEquity value attaching to tokenId's harlic
 
+        uint256 tokenIndex = allTokensIndex[_tokenId];
+        uint256 latestSelfAssesedValue = harlics[tokenIndex].harlicValue;
+        uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(latestSelfAssesedValue, 1000000000000000000), harlics[tokenIndex].publicEquity); //require acquiror to send harlic value less privateEquity to contract; this value to be forwarded to oldOwner
+
+
+        require(msg.value >= acquisitionPrice);
+
+
+        address oldOwner = ownerOf(_tokenId);
+        address newOwner = msg.sender;
+
+        require(oldOwner != address(0));
+        require(newOwner != address(0));
+
+        clearApproval(oldOwner, _tokenId);
+        removeTokenFrom(oldOwner, _tokenId);
+        addTokenTo(newOwner, _tokenId);
+
+        harlics[tokenIndex].privateRentier = newOwner;
+
+        //ADD here:
+        //transfer msg.value from contract to former harlic holder
+
+        emit Transfer(oldOwner, newOwner, _tokenId);
   }
+
+  /**
+   * @dev Public function causing the confiscation of publicEquity corresponding to all tokenOwner's past due taxes
+   * @dev Sets the value of publicEquity of each harlic to the current level of unpaid taxes
+   */
+  function confiscateAllPublicEquity ()
+    public returns (bool) {
+
+    }
+
+  /**
+   * @dev Public function causing the confiscation of publicEquity corresponding to particular token
+   * @dev Sets the value of publicEquity of tokenId's harlic to the current level of unpaid taxes
+   */
+  function confiscateTokenPublicEquity (uint256 _tokenId)
+    public returns (uint256, uint256, uint256, uint256) {
+        uint256 allTimeTax = calculateTax(_tokenId);
+        uint256 index = allTokensIndex[_tokenId];
+        uint256 paidTaxes = taxlogs[index].paidTaxes;
+        uint256 owedTaxes = SafeMath.sub(allTimeTax, paidTaxes);
+        uint256 latestSelfAssesedValue = harlics[index].harlicValue;
+        uint256 publicEquity = owedTaxes; //absolute (wei) publicEquity
+
+        harlics[index].publicEquity = publicEquity;
+
+        return (paidTaxes, owedTaxes, latestSelfAssesedValue, publicEquity);
+
+    }
 
   /**CUSTOM GETTERS**/
 
@@ -317,6 +403,19 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     return (taxlogs[_index].dateSeries, taxlogs[_index].harlicValueSeries);
     //now, build calculator that calculates unpaid tax: (SUM OF (time/year)*value in period) - paid Taxes
 
+  }
+
+  function getAcquisitionPrice (uint256 _tokenId) public returns (uint256) {
+    confiscateTokenPublicEquity(_tokenId); //update publicEquity value attaching to tokenId's harlic
+
+    uint256 tokenIndex = allTokensIndex[_tokenId];
+    uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000), harlics[tokenIndex].publicEquity);
+
+    return acquisitionPrice;
+  }
+
+  function divTest (uint256 _first, uint256 _second) public returns (uint256) {
+      return SafeMath.div(_first, _second);
   }
 
 }
