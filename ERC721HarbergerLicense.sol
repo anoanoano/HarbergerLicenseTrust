@@ -9,7 +9,7 @@ import "./ERC721BasicToken.sol";
  * Moreover, it includes approve all functionality using operator terminology
  * @dev see https://github.com/ethereum/EIPs/blob/master/EIPS/eip-721.md
  */
-contract ERC721Token is ERC721, ERC721BasicToken {
+contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
   // Token name
   string internal name_;
 
@@ -214,6 +214,18 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     allTokensIndex[lastToken] = tokenIndex;
   }
 
+    /**
+   * @dev Create a tokenID denoting a license
+   * @dev Throws if the token ID already exists.
+   * @param _to token owner
+   * @param _tokenId token ID, must be unique
+   * @param _turnoverRate yearly tax rate as percent.  I.e.: "20" gives a twenty percent yearly rate, calculated per second.  Corresponds to an asset that turns over once every five years (100/20).
+   * @param _harlicValue value in ether of the HarbergerLicense (harlic)
+   * @param _publicEquity portion of the equity value, in ether, of the license that is owned by the contract/the public
+   * @param _privateRentier beneficiary of HarbergerTaxes (usually same as TokenID owner but allows assignment of revenue stream)
+   * @param _tokenURI string name
+   */
+
   function publicMint(      //put into the internal _mint after testing finished
     address _to,
     uint256 _tokenId,
@@ -254,6 +266,14 @@ contract ERC721Token is ERC721, ERC721BasicToken {
 
   }
 
+     /**
+   * @dev report new self-assessed value
+   * @dev new per-second tax rate immediately goes into effect.
+   * @dev causes previous tax rate to "accrue", i.e. be calculated by the calculateTax function
+   * @param _tokenId token ID, must be owned by you
+   * @param _value new value
+   */
+
   function selfAssess (uint256 _tokenId, uint256 _value)
     public onlyOwnerOf(_tokenId)
     returns (bool) {
@@ -268,6 +288,10 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     taxlogs[tokenIndex].dateSeries.push(now);
 
   }
+
+     /**
+   * @dev calculate accrued tax, paid or not--i.e. all taxes outside of the period formed by the most recent self-valuation
+   */
 
   function calculateTax(uint256 _tokenId) public view returns (uint256) {
 
@@ -297,6 +321,10 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     return (allTimeTax);
   }
 
+      /**
+   * @dev testing function that shows the current per-second tax rate
+   */
+
     function calculateTaxTesting(uint256 _tokenId) public view returns (uint256) {
 
     /*tax calculation, working*/
@@ -325,6 +353,10 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     return (taxRate);
   }
 
+    /**
+   * @dev value sent with function applied against taxes
+   */
+
   function payTax (uint256 _tokenId)
     public payable returns (uint256) {
 
@@ -338,6 +370,10 @@ contract ERC721Token is ERC721, ERC721BasicToken {
         taxlogs[index].paidTaxes += msg.value;
 
     }
+
+     /**
+   * @dev force-acquire token. value sent must equal or exceed current value of token less owner's current unpaid taxes
+   */
 
   function acquireToken (uint256 _tokenId)
     public payable returns (bool) {
@@ -381,6 +417,7 @@ contract ERC721Token is ERC721, ERC721BasicToken {
   /**
    * @dev Public function causing the confiscation of publicEquity corresponding to particular token
    * @dev Sets the value of publicEquity of tokenId's harlic to the current level of unpaid taxes
+   * @dev TODO: cause this to presently re-appraise the token at the current value so that recent unpaid taxes accrue.
    */
   function confiscateTokenPublicEquity (uint256 _tokenId)
     public returns (uint256, uint256, uint256, uint256) {

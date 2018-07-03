@@ -2,6 +2,8 @@
 
 A decentralized system for administering ERC721 Harberger licenses attaching to real-world assets.
 
+See ERC721HarbergerLicense.sol.
+
 1. Draw up a real-world contract entitling the holder of a particular ERC721 token to a Harberger license on an asset.
 
 2. Mint an ERC721 token corresponding to a Harberger license on a real asset.  Set the turnover rate (i.e., the ongoing fees to hold the license), the value of the Harberger license, and the beneficiary of the fees.
