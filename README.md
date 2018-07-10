@@ -10,12 +10,12 @@ High level intro on how one might interact with the contract:
 
 1. Mint a unique ERC721 token corresponding to a Harberger license on a real asset.  Set the turnover rate (i.e., the ongoing fees to hold the license), the value of the Harberger license, and the beneficiary of the fees.
 
-2. Draw up a real-world contract entitling the holder of that ERC721 token to a Harberger license to occupy, possess, or use the real asset.  This step must occur off-chain.  Lawyer not included :).
+2. Draw up a real-world contract entitling the holder of that unique ERC721 token to a Harberger license to occupy, possess, or otherwise use the real asset, subject to a periodic property tax based on a self-assessed value, and claimable by anyone for the self-assessed value.  This must occur off-chain, obviously.  Lawyer not included :).
 
 3. A yearly fee equaling the defined turnover rate (the Harberger tax) must be paid by the token holder/licensee to the contract.  The fee flows to the beneficiary chosen by the licensor.
 
 4. As often as desired, the token holder may update her self-assessed license value, thus changing the amount she must pay to hold the license.
 
-5. When fees are not paid, "equity" in the Harberger license equal to the amount of the unpaid fees reverts to the beneficiary of the fees.  It may be bought back by the token holder or a new purchaser, by paying back-fees.
+5. When fees are not paid, "equity" in the Harberger license equal to the amount of the unpaid fees reverts to the beneficiary of the fees.  It may be bought back by the token holder or a new purchaser, by paying back-fees.  If it is not bought back, then at the time of the next transfer, a portion of the transfer sum corresponding to the unpaid fees goes to the fee beneficiary, not the token holder. 
 
-6. Anyone may transfer any Harberger license token to himself (i.e., force a sale) by paying its self-assessed value to the contract, which then forwards that amount to the former holder.  
+6. Anyone may transfer any Harberger license token to himself (i.e., force a sale) by paying its self-assessed value to the contract, which then forwards that amount to the former holder (and or fee beneficiary, to the extent back taxes are owed).  
