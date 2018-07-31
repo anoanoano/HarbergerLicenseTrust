@@ -314,15 +314,22 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         uint256 turnoversTimes100 = SafeMath.mul(taxlogs[tokenIndex].noOfTurnoversSeries[i], 100);
         uint256 yearlyTurnoverRate = SafeMath.div(SafeMath.mul(turnoversTimes100, secondsSinceCreation),
             31536000);
+        uint256 creatorIncentive = SafeMath.sub(1, SafeMath.div(1, taxlogs[tokenIndex].noOfTurnoversSeries[i]));
         if (taxlogs[tokenIndex].noOfTurnoversSeries[i] == 0) {
             uint256 periodTurnoverRate = harlics[tokenIndex].initialTurnoverRate;
         } else {
             periodTurnoverRate = yearlyTurnoverRate; //
         }
 
-        uint256 taxRate = SafeMath.div(SafeMath.div(SafeMath.mul(harlics[tokenIndex].initialTurnoverRate, periodValuation),
+        uint256 taxRate =
+        SafeMath.div(
+            SafeMath.div(
+                SafeMath.mul(
+                    SafeMath.mul(periodTurnoverRate, periodValuation),
+                creatorIncentive),
             100),
-            31536000); //(turnoverRate/100 times periodValuation) divided by seconds in a year: yields per-second tax
+        31536000); //(turnoverRate/100 times periodValuation times creatorIncentive (1-(1/turnovers)) divided by seconds in a year: yields per-second tax
+
         allTimeTax += SafeMath.mul(taxRate, periodLength);
 
 
@@ -450,7 +457,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
    */
   function confiscateAllPublicEquity ()
     public returns (bool) {
-        
+
     }
 
   /**
