@@ -50,6 +50,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
   struct Taxlog {
      uint256 tokenID;
      uint256 paidTaxes; //in wei
+     uint256 incurredTaxes; //in wei
      uint256[] assessmentDateSeries; //dates on which value adjusted since last tax payment
      uint256[] harlicValueSeries; //values in each period
      uint256[] noOfTurnoversSeries; //no. of turnovers on books during each assessment period
@@ -253,6 +254,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     Taxlog memory _taxlog = Taxlog({
         tokenID: _tokenId,
         paidTaxes: 0,
+        incurredTaxes: 0,
         harlicValueSeries: new uint256[](0),
         assessmentDateSeries: new uint256[](0),
         noOfTurnoversSeries: new uint256[](0)
@@ -262,7 +264,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     taxlogs[taxlogs.length - 1].assessmentDateSeries.push(now);
     taxlogs[taxlogs.length - 1].noOfTurnoversSeries.push(0);
     taxlogs[taxlogs.length - 1].harlicValueSeries.push(_harlicValue);
-    
+
     tokenTaxlog[_tokenId] = taxlogs.length - 1; //make record of associated taxlog
     tokenHarlic[_tokenId] = harlics.length - 1; //make record of associated harlic
 
@@ -284,7 +286,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     returns (bool) {
 
     /*prevent out-of-chronological-order assessments*/
-    require(taxlogs[tokenIndex].assessmentDateSeries[taxlogs[tokenIndex].assessmentDateSeries.length-1] < now);
+    require(taxlogs[tokenIndex].assessmentDateSeries[taxlogs[tokenIndex].assessmentDateSeries.length-1] <= now);
 
     /*update self-assessed value*/
     uint256 tokenIndex = allTokensIndex[_tokenId];
@@ -349,6 +351,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         allTimeTax += SafeMath.mul(taxRate, periodLength);
 
     }
+    //taxlogs[tokenIndex].incurredTaxes = allTimeTax;
     return (allTimeTax);
   }
 
@@ -424,9 +427,9 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
    */
 
   function payTax (uint256 _tokenId)
-    public payable returns (uint256) {
+    public payable returns (bool) {
 
-        confiscateTokenPublicEquity(_tokenId);
+        //confiscateTokenPublicEquity(_tokenId);
 
         uint256 allTimeTax = calculateTax(_tokenId);
         uint256 index = allTokensIndex[_tokenId];
@@ -437,7 +440,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
         taxlogs[index].paidTaxes += msg.value;
 
-        return (SafeMath.sub(owedTaxes, msg.value));
+
 
     }
 
@@ -495,8 +498,11 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     public returns (uint256, uint256, uint256, uint256) {
         reaffirmValue(_tokenId);
 
-        uint256 allTimeTax = calculateTax(_tokenId);
         uint256 index = allTokensIndex[_tokenId];
+        uint256 allTimeTax = calculateTax(_tokenId);
+
+        taxlogs[index].incurredTaxes = allTimeTax;
+
         uint256 paidTaxes = taxlogs[index].paidTaxes;
         uint256 owedTaxes = SafeMath.sub(allTimeTax, paidTaxes);
         uint256 latestSelfAssesedValue = harlics[index].harlicValue;
