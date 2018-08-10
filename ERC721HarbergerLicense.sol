@@ -53,6 +53,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
      uint256 incurredTaxes; //in wei
      uint256 lastTaxationDate;
      uint256 creationDate;
+     uint256 presentTaxRate;
 
      //uint256[] assessmentDateSeries; //dates on which value adjusted since last tax payment
      //uint256[] harlicValueSeries; //values in each period
@@ -259,7 +260,8 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         paidTaxes: 0,
         incurredTaxes: 0,
         creationDate: now,
-        lastTaxationDate: now
+        lastTaxationDate: now,
+        presentTaxRate: _initialTurnoverRate
 
         // harlicValueSeries: new uint256[](0),
         // assessmentDateSeries: new uint256[](0),
@@ -323,7 +325,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
    * @dev calculate accrued tax, paid or not--i.e. all taxes outside of the period formed by the most recent self-valuation
    */
 
-  function calculateTax(uint256 _tokenId) public view returns (uint256) {
+  function calculateTax(uint256 _tokenId) public returns (uint256) {
 
     /*tax calculation, working*/
     require(exists(_tokenId) == true);
@@ -335,13 +337,13 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
             SafeMath.sub(now, taxlogs[tokenIndex].lastTaxationDate); // in seconds
         uint256 secondsSinceCreation = SafeMath.sub(now, taxlogs[tokenIndex].creationDate); //time in existence
         uint256 turnoversTimes100 = SafeMath.mul(harlics[tokenIndex].acquisitionsCounter, 100);
-        uint256 yearlyTurnoverRate = SafeMath.div(SafeMath.mul(turnoversTimes100, secondsSinceCreation),
+        uint256 yearlyTurnoverRateBySecond = SafeMath.div(SafeMath.mul(turnoversTimes100, secondsSinceCreation),
             31536000);
         if (turnoversTimes100 == 0) {
             uint256 currentTurnoverRate = harlics[tokenIndex].initialTurnoverRate;
             uint256 creatorIncentive = 1;
         } else {
-            currentTurnoverRate = yearlyTurnoverRate; //
+            currentTurnoverRate = yearlyTurnoverRateBySecond; //
             creatorIncentive = SafeMath.sub(1, SafeMath.div(1, harlics[tokenIndex].acquisitionsCounter));
         }
 
@@ -349,10 +351,13 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         SafeMath.div(
             SafeMath.div(
                 SafeMath.mul(
-                    SafeMath.mul(currentTurnoverRate, periodValuation),
+                    SafeMath.mul(currentTurnoverRate,
+                    periodValuation),
                 creatorIncentive),
             100),
         31536000); //(turnoverRate/100 times periodValuation times creatorIncentive (1-(1/turnovers)) divided by seconds in a year: yields per-second tax
+
+        taxlogs[tokenIndex].presentTaxRate = taxRate; //update taxrate
 
         taxSinceLastAssessment = SafeMath.mul(taxRate, periodLength);
 
