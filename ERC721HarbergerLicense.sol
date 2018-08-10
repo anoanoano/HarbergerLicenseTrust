@@ -291,7 +291,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     public onlyOwnerOf(_tokenId)
     returns (bool) {
 
-    //call assessTax
+    assessTax(_tokenId);
 
     /*prevent out-of-chronological-order assessments*/
     require(taxlogs[tokenIndex].lastTaxationDate <= now,
@@ -402,25 +402,6 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 //     return (taxRate, taxRate*100*31536000);
 //   }
 
-    /**
-   * @dev value sent with function applied against taxes
-   */
-
-  function payTax (uint256 _tokenId)
-    public payable returns (bool) {
-
-        assessTax(_tokenId);
-
-        uint256 index = allTokensIndex[_tokenId];
-        uint256 owedTaxes = SafeMath.sub(taxlogs[index].incurredTaxes, taxlogs[index].paidTaxes); //doing anything with this var?
-
-        require(msg.value <= owedTaxes,
-        "You must not send more than the amount of tax you owe.  You should send a bit less than the amount you owe.");
-
-        taxlogs[index].paidTaxes += msg.value;
-
-    }
-
      /**
    * @dev force-acquire token. value sent must equal or exceed current value of token less owner's current unpaid taxes
    */
@@ -432,10 +413,14 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         uint256 tokenIndex = allTokensIndex[_tokenId];
         uint256 latestSelfAssesedValue = harlics[tokenIndex].harlicValue;
         uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(latestSelfAssesedValue, 1000000000000000000), harlics[tokenIndex].publicEquity); //require acquiror to send harlic value less privateEquity to contract; this value to be forwarded to oldOwner
+        uint256 taxPayment = SafeMath.sub(msg.value, acquisitionPrice);
         address oldOwner = ownerOf(_tokenId);
         address newOwner = msg.sender;
 
-        require(msg.value >= acquisitionPrice);
+        require(msg.value >= acquisitionPrice,
+        "You tried to send less than the acquisition price.  Transaction reverted.");
+        //require(msg.value <= latestSelfAssesedValue,
+        //"You tried to send more than the value of the asset.  Transaction reverted.");
         require(oldOwner != address(0));
         require(newOwner != address(0));
 
@@ -444,9 +429,14 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         addTokenTo(newOwner, _tokenId);
 
         harlics[tokenIndex].acquisitionsCounter ++;
-        harlics[tokenIndex].feeBeneficiary = newOwner;
+        //harlics[tokenIndex].feeBeneficiary = newOwner; //the beneficiary for all
+                                                            //should be the contract
+                                                            //the contract should send to a third party contract
+                                                            //that calculates all participants' quadratic
+                                                            //stake in the system and pays them dividends
 
-        //build internal payTax function that applies sent value minus acquisition price to taxes
+        //internal payTax function that applies sent value minus acquisition price to taxes
+        applyAcquisitionPaymentToTax(_tokenId, taxPayment);
 
         //test:
         oldOwner.transfer(acquisitionPrice);
@@ -492,15 +482,36 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
     }
 
+        /**
+   * @dev value sent with function applied against taxes
+   */
+
+  function payTax (uint256 _tokenId)
+    public payable returns (bool) {
+
+        assessTax(_tokenId);
+
+        uint256 index = allTokensIndex[_tokenId];
+        uint256 owedTaxes = SafeMath.sub(taxlogs[index].incurredTaxes, taxlogs[index].paidTaxes);
+
+        require(msg.value <= owedTaxes,
+        "You must not send more than the amount of tax you owe.  You should send a bit less than the amount you owe.");
+
+        taxlogs[index].paidTaxes += msg.value;
+
+    }
+
+  function applyAcquisitionPaymentToTax (uint256 _tokenId, uint256 _taxPayment)
+    internal returns (bool) {
+
+        uint256 index = allTokensIndex[_tokenId];
+
+        taxlogs[index].paidTaxes += _taxPayment;
+        harlics[index].publicEquity -= _taxPayment;
+
+    }
+
   /**CUSTOM GETTERS**/
-
-//   function getTaxesByIndex(uint256 _index) public view returns (uint256[], uint256[], uint256[]) {
-//     return (taxlogs[_index].assessmentDateSeries,
-//             taxlogs[_index].harlicValueSeries,
-//             taxlogs[_index].noOfTurnoversSeries);
-//     //now, build calculator that calculates unpaid tax: (SUM OF (time/year)*value in period) - paid Taxes
-
-//   }
 
   function getAcquisitionPrice (uint256 _tokenId) public returns (uint256) {
     assessTax(_tokenId); //update publicEquity value attaching to tokenId's harlic
