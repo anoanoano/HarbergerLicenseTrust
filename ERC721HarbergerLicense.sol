@@ -40,7 +40,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
   /** STRUCTS **/
   struct Harlic {
      uint256 tokenID;
-     uint256 initialTurnoverRate; //turnovers per year/100
+     uint256 turnoverRate; //turnovers per year/100
      uint256 harlicValue; //in ether
      uint256 publicEquity; //in wei
      uint256 acquisitionsCounter; //counting acquisitions
@@ -54,7 +54,6 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
      uint256 lastTaxationDate;
      uint256 creationDate;
      uint256 presentTaxRate;
-     uint256 yearlyTurnovers;
      uint256 secondlyTaxRate;
 
      //uint256[] assessmentDateSeries; //dates on which value adjusted since last tax payment
@@ -228,7 +227,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
    * @dev Throws if the token ID already exists.
    * @param _to token owner
    * @param _tokenId token ID, must be unique
-   * @param _initialTurnoverRate yearly tax rate as percent.  I.e.: "20" gives a twenty percent yearly rate, calculated per second.  Corresponds to an asset that turns over once every five years (100/20).
+   * @param _turnoverRate yearly tax rate as percent.  I.e.: "20" gives a twenty percent yearly rate, calculated per second.  Corresponds to an asset that turns over once every five years (100/20).
    * @param _harlicValue value in ether of the HarbergerLicense (harlic)
    * @param _publicEquity portion of the equity value, in ether, of the license that is owned by the contract/the public
    * @param _feeBeneficiary beneficiary of HarbergerTaxes (usually same as TokenID owner but allows assignment of revenue stream)
@@ -238,18 +237,18 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
   function publicMint(      //put into the internal _mint after testing finished
     address _to,
     uint256 _tokenId,
-    uint256 _initialTurnoverRate,
+    uint256 _turnoverRate,
     uint256 _harlicValue,
     uint256 _publicEquity, //should be zero unless user donating to public
     address _feeBeneficiary,
     string _tokenURI) public returns (bool) {
 
-    require(_initialTurnoverRate >= 0); // as percentage
+    require(_turnoverRate >= 0); // as percentage
     require(_publicEquity >= 0 && _publicEquity <= 100); // require percentage
 
     Harlic memory _harlic = Harlic({
         tokenID: _tokenId,
-        initialTurnoverRate: _initialTurnoverRate,
+        turnoverRate: _turnoverRate,
         harlicValue: _harlicValue,
         publicEquity: _publicEquity,
         feeBeneficiary: _feeBeneficiary,
@@ -263,8 +262,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         incurredTaxes: 0,
         creationDate: now,
         lastTaxationDate: now,
-        presentTaxRate: _initialTurnoverRate,
-        yearlyTurnovers: 0,
+        presentTaxRate: _turnoverRate,
         secondlyTaxRate: 0
 
         // harlicValueSeries: new uint256[](0),
@@ -336,125 +334,48 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     uint256 tokenIndex = allTokensIndex[_tokenId];
     uint256 taxSinceLastAssessment;
 
-        uint256 periodValuationEther = SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000);
-        uint256 periodLengthSeconds =
-            SafeMath.sub(now, taxlogs[tokenIndex].lastTaxationDate); // in seconds
-        uint256 timeSinceCreationSeconds = SafeMath.sub(now, taxlogs[tokenIndex].creationDate); //time in existence
-        uint256 totalTurnovers = harlics[tokenIndex].acquisitionsCounter;
-        uint256 turnoversTimesWeiOverSecondsSinceCreation = SafeMath.div(SafeMath.mul(totalTurnovers, 1000000000000000000), timeSinceCreationSeconds);
-        if (totalTurnovers == 0) {
-            uint256 weiPerEtherPerSecondTax = harlics[tokenIndex].initialTurnoverRate;
-            uint256 creatorIncentive = 1;
-        } else {
-            weiPerEtherPerSecondTax = turnoversTimesWeiOverSecondsSinceCreation; //
-            creatorIncentive = SafeMath.sub(1000, SafeMath.div(1000, harlics[tokenIndex].acquisitionsCounter));
-        }
+    uint256 periodValuationEther = SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000);
+    uint256 periodLengthSeconds =
+        SafeMath.sub(now, taxlogs[tokenIndex].lastTaxationDate); // in seconds
 
-        uint256 taxRate =
-//        SafeMath.div(
-//            SafeMath.div(
-                SafeMath.div(SafeMath.mul(
-                        SafeMath.mul(weiPerEtherPerSecondTax,
-                        periodValuationEther),
-                creatorIncentive), 1000);
-//            1000000000000000000), //deflating the multipliers above on yearlyTurnovers and creatorIncentive
-//        31536000); //(turnoverRate/100 times periodValuation times creatorIncentive (1-(1/turnovers)) divided by seconds in a year: yields per-second tax
+        /*turnover calculation not in use for purposes of turnover rate calculation
+            better to collect turnover metadata
+            and pass it to another contract that can update
+            the initialturnover rate in the struct*/
+        //uint256 timeSinceCreationSeconds = SafeMath.sub(now, taxlogs[tokenIndex].creationDate); //time in existence
+    uint256 totalTurnovers = harlics[tokenIndex].acquisitionsCounter;
+        //uint256 turnoversPerYear =  totalTurnovers / ((timeSinceCreationSeconds / 31536000) +1);
+        //uint256 turnoversTimesWeiOverSecondsSinceCreation = SafeMath.div(SafeMath.mul(totalTurnovers, 1000000000000000000), timeSinceCreationSeconds);
+    if (totalTurnovers == 0) {
+        uint256 weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(31536000, SafeMath.div(100, harlics[tokenIndex].turnoverRate)));
+        uint256 creatorIncentive = 0;
+    } else {
+        weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(31536000, SafeMath.div(100, harlics[tokenIndex].turnoverRate)));
+        creatorIncentive = SafeMath.sub(1000000000000000000, SafeMath.div(1000000000000000000, harlics[tokenIndex].acquisitionsCounter));
+    }
 
-        taxlogs[tokenIndex].presentTaxRate = taxRate; //update taxrate
-        taxlogs[tokenIndex].yearlyTurnovers = totalTurnovers;
-        taxlogs[tokenIndex].secondlyTaxRate = turnoversTimesWeiOverSecondsSinceCreation;
+    uint256 decayedWeiPerSecondTax = SafeMath.div(SafeMath.mul(weiPerSecondTax, creatorIncentive), 1000000000000000000);
+//         uint256 taxRate =
+// //        SafeMath.div(
+// //            SafeMath.div(
+//                 SafeMath.div(SafeMath.mul(
+//                         SafeMath.mul(weiPerSecondTax,
+//                         periodValuationEther),
+//                 creatorIncentive), 1000);
+// //            1000000000000000000), //deflating the multipliers above on yearlyTurnovers and creatorIncentive
+// //        31536000); //(turnoverRate/100 times periodValuation times creatorIncentive (1-(1/turnovers)) divided by seconds in a year: yields per-second tax
 
-        taxSinceLastAssessment = SafeMath.div(SafeMath.mul(taxRate, periodLengthSeconds), 1000000000000000000); //deflating
+        taxlogs[tokenIndex].presentTaxRate = weiPerSecondTax; //update taxrate
+        //taxlogs[tokenIndex].yearlyTurnovers = turnoversPerYear;
+        taxlogs[tokenIndex].secondlyTaxRate = decayedWeiPerSecondTax;
+
+        taxSinceLastAssessment = SafeMath.mul(decayedWeiPerSecondTax, periodLengthSeconds); //deflating
 
     //taxlogs[tokenIndex].incurredTaxes = allTimeTax;
     return (taxSinceLastAssessment);
   }
 
-//   function calculateTaxOld(uint256 _tokenId) public returns (uint256) {
 
-//     /*tax calculation, working*/
-//     require(exists(_tokenId) == true);
-//     uint256 tokenIndex = allTokensIndex[_tokenId];
-//     uint256 taxSinceLastAssessment;
-
-//         uint256 periodValuation = SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000);
-//         uint256 periodLength =
-//             SafeMath.sub(now, taxlogs[tokenIndex].lastTaxationDate); // in seconds
-//         uint256 secondsSinceCreation = SafeMath.sub(now, taxlogs[tokenIndex].creationDate); //time in existence
-//         uint256 turnoversTimes1000000000000000000 = SafeMath.mul(harlics[tokenIndex].acquisitionsCounter, 1000000000000000000);
-//         uint256 yearlyTurnoverRateBySecondTimesWei = SafeMath.div(SafeMath.div(turnoversTimes1000000000000000000, secondsSinceCreation),
-//             31536000);
-//         if (turnoversTimes1000000000000000000 == 0) {
-//             uint256 currentTurnoverRate = SafeMath.mul(harlics[tokenIndex].initialTurnoverRate, 1000000000000);
-//             uint256 creatorIncentive = 1;
-//         } else {
-//             currentTurnoverRate = yearlyTurnoverRateBySecond; //
-//             creatorIncentive = SafeMath.sub(1000, SafeMath.div(1000, harlics[tokenIndex].acquisitionsCounter));
-//         }
-
-//         uint256 taxRate =
-//         SafeMath.div(
-//             SafeMath.div(
-//                 SafeMath.div(
-//                     SafeMath.mul(
-//                         SafeMath.mul(currentTurnoverRate,
-//                         periodValuation),
-//                     creatorIncentive),
-//                 1000),
-//             1000000000000000000), //deflating the multipliers above on yearlyTurnovers and creatorIncentive
-//         31536000); //(turnoverRate/100 times periodValuation times creatorIncentive (1-(1/turnovers)) divided by seconds in a year: yields per-second tax
-
-//         taxlogs[tokenIndex].presentTaxRate = taxRate; //update taxrate
-//         taxlogs[tokenIndex].yearlyTurnovers = turnoversTimes1000000000000000000/1000000000000000000;
-//         taxlogs[tokenIndex].yearlyTurnoversPerSecond = yearlyTurnoverRateBySecond;
-
-//         taxSinceLastAssessment = SafeMath.div(SafeMath.mul(taxRateTimesWei, periodLength), 1000000000000000000); //deflating
-
-//     //taxlogs[tokenIndex].incurredTaxes = allTimeTax;
-//     return (taxSinceLastAssessment);
-//   }
-
-      /**
-   * @dev testing function that shows the current per-second tax rate
-   */
-
-//   function calculateTaxTesting(uint256 _tokenId) public view returns (uint256, uint256) {
-
-//     /*tax calculation, working*/
-//     require(exists(_tokenId) == true);
-//     uint256 tokenIndex = allTokensIndex[_tokenId];
-//     uint256 allTimeTax;
-
-//     for (uint i = 0; i <= taxlogs[tokenIndex].harlicValueSeries.length-2; i++) {
-//         uint256 periodValuation = SafeMath.mul(taxlogs[tokenIndex].harlicValueSeries[i], 1000000000000000000);
-//         uint256 periodLength =
-//             SafeMath.sub(taxlogs[tokenIndex].assessmentDateSeries[i+1], taxlogs[tokenIndex].assessmentDateSeries[i]); // in seconds
-//         uint256 secondsSinceCreation = SafeMath.sub(taxlogs[tokenIndex].assessmentDateSeries[i+1], taxlogs[tokenIndex].assessmentDateSeries[0]); //at period's end
-//         uint256 turnoversTimes100 = SafeMath.mul(taxlogs[tokenIndex].noOfTurnoversSeries[i], 100);
-//         uint256 yearlyTurnoverRate = SafeMath.div(SafeMath.mul(turnoversTimes100, secondsSinceCreation),
-//             31536000);
-//         if (taxlogs[tokenIndex].noOfTurnoversSeries[i] == 0) {
-//             uint256 periodTurnoverRate = harlics[tokenIndex].initialTurnoverRate;
-//             uint256 creatorIncentive = 1;
-//         } else {
-//             periodTurnoverRate = yearlyTurnoverRate; //
-//             creatorIncentive = SafeMath.sub(1, SafeMath.div(1, taxlogs[tokenIndex].noOfTurnoversSeries[i]));
-//         }
-
-//         uint256 taxRate =
-//         SafeMath.div(
-//             SafeMath.div(
-//                 SafeMath.mul(
-//                     SafeMath.mul(periodTurnoverRate, periodValuation),
-//                 creatorIncentive),
-//             100),
-//         31536000); //(turnoverRate/100 times periodValuation times creatorIncentive (1-(1/turnovers)) divided by seconds in a year: yields per-second tax
-
-//         allTimeTax += SafeMath.mul(taxRate, periodLength);
-
-//     }
-//     return (taxRate, taxRate*100*31536000);
-//   }
 
      /**
    * @dev force-acquire token. value sent must equal or exceed current value of token less owner's current unpaid taxes
@@ -543,16 +464,20 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
   function payTax (uint256 _tokenId)
     public payable returns (bool) {
 
+        uint256 index = allTokensIndex[_tokenId];
+
         assessTax(_tokenId);
 
-        uint256 index = allTokensIndex[_tokenId];
-        uint256 owedTaxes = SafeMath.sub(taxlogs[index].incurredTaxes, taxlogs[index].paidTaxes);
+        uint256 oldOwedTaxes = SafeMath.sub(taxlogs[index].incurredTaxes, taxlogs[index].paidTaxes);
 
-        require(msg.value <= owedTaxes,
+        require(msg.value <= oldOwedTaxes,
         "You must not send more than the amount of tax you owe.  You should send a bit less than the amount you owe.");
 
         taxlogs[index].paidTaxes += msg.value;
 
+        uint256 newOwedTaxes = SafeMath.sub(taxlogs[index].incurredTaxes, taxlogs[index].paidTaxes);
+
+        harlics[index].publicEquity = newOwedTaxes;
     }
 
   function applyAcquisitionPaymentToTax (uint256 _tokenId, uint256 _taxPayment)
