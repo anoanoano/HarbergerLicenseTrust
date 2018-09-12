@@ -37,14 +37,21 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
   // Optional mapping for token URIs
   mapping(uint256 => string) public tokenURIs;
 
+  /** EVENTS **/
+  event Confiscation(
+    address indexed _owner,
+    uint256 _tokenId
+  );
+
   /** STRUCTS **/
   struct Harlic {
      uint256 tokenID;
-     uint256 turnoverRate; //turnovers per year/100
+     uint256 turnoverRate; //turnovers per century
      uint256 harlicValue; //in ether
      uint256 publicEquity; //in wei
      uint256 acquisitionsCounter; //counting acquisitions
      address feeBeneficiary;
+     string videoID;
   }
 
   struct Taxlog {
@@ -64,6 +71,15 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
   Harlic[] public harlics;
   Taxlog[] public taxlogs;
+
+    /**
+  * @dev Dividend Calculating Variables
+  */
+
+  uint256 public totalKReceipts;
+  uint256 public payoutsTotal;
+  mapping (address => uint256) paymentsFromAddress;
+  mapping(address => uint256) payoutsToAddress;
 
   /**
    * @dev Constructor function
@@ -241,7 +257,8 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     uint256 _harlicValue,
     uint256 _publicEquity, //should be zero unless user donating to public
     address _feeBeneficiary,
-    string _tokenURI) public returns (bool) {
+    string _tokenURI,
+    string _videoID) public returns (bool) {
 
     require(_turnoverRate >= 0); // as percentage
     require(_publicEquity >= 0 && _publicEquity <= 100); // require percentage
@@ -252,7 +269,8 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         harlicValue: _harlicValue,
         publicEquity: _publicEquity,
         feeBeneficiary: _feeBeneficiary,
-        acquisitionsCounter: 0
+        acquisitionsCounter: 0,
+        videoID: _videoID
     });
     harlics.push(_harlic) - 1; //create harlic struct for token
 
@@ -308,6 +326,16 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
   }
 
+  function changeVideo (uint256 _tokenId, string _videoID)
+    public onlyOwnerOf(_tokenId)
+    returns (bool) {
+
+    /*update self-assessed value*/
+    uint256 tokenIndex = allTokensIndex[_tokenId];
+    harlics[tokenIndex].videoID = _videoID;
+
+  }
+
 
   function reaffirmValue (uint256 _tokenId) //doesnt require owner of token to call
     internal returns (bool) {
@@ -347,10 +375,11 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         //uint256 turnoversPerYear =  totalTurnovers / ((timeSinceCreationSeconds / 31536000) +1);
         //uint256 turnoversTimesWeiOverSecondsSinceCreation = SafeMath.div(SafeMath.mul(totalTurnovers, 1000000000000000000), timeSinceCreationSeconds);
     if (totalTurnovers == 0) {
-        uint256 weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(31536000, SafeMath.div(100, harlics[tokenIndex].turnoverRate)));
+        //uint256 weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(31536000, SafeMath.div(100, harlics[tokenIndex].turnoverRate))); //old function where turnover 100/turnovers/year
+        uint256 weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(3153600000, harlics[tokenIndex].turnoverRate)); //seconds in century / turnovers in century
         uint256 creatorIncentive = 0;
     } else {
-        weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(31536000, SafeMath.div(100, harlics[tokenIndex].turnoverRate)));
+        weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(3153600000, harlics[tokenIndex].turnoverRate)); //seconds in century / turnovers in century
         creatorIncentive = SafeMath.sub(1000000000000000000, SafeMath.div(1000000000000000000, harlics[tokenIndex].acquisitionsCounter));
     }
 
@@ -412,6 +441,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
         //internal payTax function that applies sent value minus acquisition price to taxes
         applyAcquisitionPaymentToTax(_tokenId, taxPayment);
+        trackPayments(newOwner, taxPayment);
 
         //test:
         oldOwner.transfer(acquisitionPrice);
@@ -430,6 +460,29 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 //     public returns (bool) {
 //         //loop through all tokens
 //     }
+
+  /**
+   * @dev Confiscate tkenn with PublicEquity >= 1ETH
+   */
+  function confiscateToken (uint _tokenID)
+    public returns (bool) {
+        uint256 tokenIndex = allTokensIndex[_tokenID];
+        bool delinquent = (harlics[tokenIndex].publicEquity > 1);
+        address owner = ownerOf(_tokenID);
+        if (delinquent == true) {
+
+            harlics[tokenIndex].harlicValue = 0;
+            harlics[tokenIndex].publicEquity = 0;
+            harlics[tokenIndex].videoID = "DRVptF3MG4g";
+            taxlogs[tokenIndex].paidTaxes = 0;
+            taxlogs[tokenIndex].paidTaxes = 0;
+            taxlogs[tokenIndex].incurredTaxes = 0;
+            taxlogs[tokenIndex].secondlyTaxRate = 0;
+
+        }
+
+        emit Confiscation(owner, _tokenID);
+    }
 
   /**
    * @dev Public function causing the confiscation of publicEquity corresponding to particular token
@@ -501,8 +554,41 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     return acquisitionPrice;
   }
 
+  function simplePrice (uint256 _tokenId) public view returns (uint256 tIndex, uint256 harlicVal, uint256 pEquity, uint256 aPrice) {
+
+    uint256 tokenIndex = allTokensIndex[_tokenId];
+    uint256 harlicValue = harlics[tokenIndex].harlicValue;
+    uint256 publicEquity = harlics[tokenIndex].publicEquity;
+    uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000), harlics[tokenIndex].publicEquity);
+
+    return (tokenIndex, harlicValue, publicEquity, acquisitionPrice);
+  }
+
   function divTest (uint256 _first, uint256 _second) public returns (uint256) {
       return SafeMath.div(_first, _second);
+  }
+
+  function() public payable {
+
+  }
+
+  function trackPayments(address _address, uint256 _amountIn) internal {
+
+      totalKReceipts += _amountIn;
+      paymentsFromAddress[_address] += _amountIn;
+
+  }
+
+  function claimDividend(address _address) public payable {
+
+      uint256 allTimeStake = SafeMath.div(paymentsFromAddress[_address], totalKReceipts);
+      uint256 claimableStake = SafeMath.sub(allTimeStake, payoutsToAddress[_address]);
+
+      _address.transfer(claimableStake);
+
+      payoutsToAddress[_address] += claimableStake;
+      payoutsTotal += claimableStake;
+
   }
 
 }
