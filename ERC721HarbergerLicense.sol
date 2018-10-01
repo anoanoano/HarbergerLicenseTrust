@@ -63,10 +63,6 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
      uint256 presentTaxRate;
      uint256 secondlyTaxRate;
 
-     //uint256[] assessmentDateSeries; //dates on which value adjusted since last tax payment
-     //uint256[] harlicValueSeries; //values in each period
-     //uint256[] noOfTurnoversSeries; //no. of turnovers on books during each assessment period
-
   }
 
   Harlic[] public harlics;
@@ -189,9 +185,6 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
     ownedTokens[_from][tokenIndex] = lastToken;
     ownedTokens[_from][lastTokenIndex] = 0;
-    // Note that this will handle single-element arrays. In that case, both tokenIndex and lastTokenIndex are going to
-    // be zero. Then we can make sure that we will remove _tokenId from the ownedTokens list since we are first swapping
-    // the lastToken to the first position, and then dropping the element placed in the last position of the list
 
     ownedTokens[_from].length--;
     ownedTokensIndex[_tokenId] = 0;
@@ -244,7 +237,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
    * @param _to token owner
    * @param _tokenId token ID, must be unique
    * @param _turnoverRate yearly tax rate as percent.  I.e.: "20" gives a twenty percent yearly rate, calculated per second.  Corresponds to an asset that turns over once every five years (100/20).
-   * @param _harlicValue value in ether of the HarbergerLicense (harlic)
+   * @param _harlicValue value in Mether of the HarbergerLicense (harlic)
    * @param _publicEquity portion of the equity value, in ether, of the license that is owned by the contract/the public
    * @param _feeBeneficiary beneficiary of HarbergerTaxes (usually same as TokenID owner but allows assignment of revenue stream)
    * @param _tokenURI string name
@@ -283,15 +276,10 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         presentTaxRate: _turnoverRate,
         secondlyTaxRate: 0
 
-        // harlicValueSeries: new uint256[](0),
-        // assessmentDateSeries: new uint256[](0),
-        // noOfTurnoversSeries: new uint256[](0)
     });
     taxlogs.push(_taxlog) - 1; //create taxlog struct for token
 
-    // taxlogs[taxlogs.length - 1].assessmentDateSeries.push(now);
-    // taxlogs[taxlogs.length - 1].noOfTurnoversSeries.push(0);
-    // taxlogs[taxlogs.length - 1].harlicValueSeries.push(_harlicValue);
+
 
     tokenTaxlog[_tokenId] = taxlogs.length - 1; //make record of associated taxlog
     tokenHarlic[_tokenId] = harlics.length - 1; //make record of associated harlic
@@ -362,37 +350,24 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     uint256 tokenIndex = allTokensIndex[_tokenId];
     uint256 taxSinceLastAssessment;
 
-    uint256 periodValuationEther = SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000);
+    uint256 periodValuationMEther = SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000);
     uint256 periodLengthSeconds =
         SafeMath.sub(now, taxlogs[tokenIndex].lastTaxationDate); // in seconds
 
-        /*turnover calculation not in use for purposes of turnover rate calculation
-            better to collect turnover metadata
-            and pass it to another contract that can update
-            the initialturnover rate in the struct*/
-        //uint256 timeSinceCreationSeconds = SafeMath.sub(now, taxlogs[tokenIndex].creationDate); //time in existence
+
     uint256 totalTurnovers = harlics[tokenIndex].acquisitionsCounter;
-        //uint256 turnoversPerYear =  totalTurnovers / ((timeSinceCreationSeconds / 31536000) +1);
-        //uint256 turnoversTimesWeiOverSecondsSinceCreation = SafeMath.div(SafeMath.mul(totalTurnovers, 1000000000000000000), timeSinceCreationSeconds);
+
     if (totalTurnovers == 0) {
-        //uint256 weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(31536000, SafeMath.div(100, harlics[tokenIndex].turnoverRate))); //old function where turnover 100/turnovers/year
-        uint256 weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(3153600000, harlics[tokenIndex].turnoverRate)); //seconds in century / turnovers in century
+
+        uint256 weiPerSecondTax = SafeMath.mul(SafeMath.div(periodValuationMEther, SafeMath.mul(3153600000, harlics[tokenIndex].turnoverRate)), 1000000); //seconds in century / turnovers in century
         uint256 creatorIncentive = 0;
     } else {
-        weiPerSecondTax = SafeMath.div(periodValuationEther, SafeMath.mul(3153600000, harlics[tokenIndex].turnoverRate)); //seconds in century / turnovers in century
+        weiPerSecondTax = SafeMath.mul(SafeMath.div(periodValuationMEther, SafeMath.mul(3153600000, harlics[tokenIndex].turnoverRate)), 1000000); //seconds in century / turnovers in century
         creatorIncentive = SafeMath.sub(1000000000000000000, SafeMath.div(1000000000000000000, harlics[tokenIndex].acquisitionsCounter));
     }
 
     uint256 decayedWeiPerSecondTax = SafeMath.div(SafeMath.mul(weiPerSecondTax, creatorIncentive), 1000000000000000000);
-//         uint256 taxRate =
-// //        SafeMath.div(
-// //            SafeMath.div(
-//                 SafeMath.div(SafeMath.mul(
-//                         SafeMath.mul(weiPerSecondTax,
-//                         periodValuationEther),
-//                 creatorIncentive), 1000);
-// //            1000000000000000000), //deflating the multipliers above on yearlyTurnovers and creatorIncentive
-// //        31536000); //(turnoverRate/100 times periodValuation times creatorIncentive (1-(1/turnovers)) divided by seconds in a year: yields per-second tax
+
 
         taxlogs[tokenIndex].presentTaxRate = weiPerSecondTax; //update taxrate
         //taxlogs[tokenIndex].yearlyTurnovers = turnoversPerYear;
@@ -416,7 +391,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
         uint256 tokenIndex = allTokensIndex[_tokenId];
         uint256 latestSelfAssesedValue = harlics[tokenIndex].harlicValue;
-        uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(latestSelfAssesedValue, 1000000000000000000), harlics[tokenIndex].publicEquity); //require acquiror to send harlic value less privateEquity to contract; this value to be forwarded to oldOwner
+        uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(latestSelfAssesedValue, 1000000000000000), harlics[tokenIndex].publicEquity); //require acquiror to send harlic value less privateEquity to contract; this value to be forwarded to oldOwner
         uint256 taxPayment = SafeMath.sub(msg.value, acquisitionPrice);
         address oldOwner = ownerOf(_tokenId);
         address newOwner = msg.sender;
@@ -433,11 +408,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
         addTokenTo(newOwner, _tokenId);
 
         harlics[tokenIndex].acquisitionsCounter ++;
-        //harlics[tokenIndex].feeBeneficiary = newOwner; //the beneficiary for all
-                                                            //should be the contract
-                                                            //the contract should send to a third party contract
-                                                            //that calculates all participants' quadratic
-                                                            //stake in the system and pays them dividends
+
 
         //internal payTax function that applies sent value minus acquisition price to taxes
         applyAcquisitionPaymentToTax(_tokenId, taxPayment);
@@ -462,7 +433,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 //     }
 
   /**
-   * @dev Confiscate tkenn with PublicEquity >= 1ETH
+   * @dev Confiscate token with PublicEquity >= 1ETH
    */
   function confiscateToken (uint _tokenID)
     public returns (bool) {
@@ -549,7 +520,7 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     assessTax(_tokenId); //update publicEquity value attaching to tokenId's harlic
 
     uint256 tokenIndex = allTokensIndex[_tokenId];
-    uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000), harlics[tokenIndex].publicEquity);
+    uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000), harlics[tokenIndex].publicEquity);
 
     return acquisitionPrice;
   }
@@ -559,13 +530,9 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
     uint256 tokenIndex = allTokensIndex[_tokenId];
     uint256 harlicValue = harlics[tokenIndex].harlicValue;
     uint256 publicEquity = harlics[tokenIndex].publicEquity;
-    uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000000), harlics[tokenIndex].publicEquity);
+    uint256 acquisitionPrice = SafeMath.sub(SafeMath.mul(harlics[tokenIndex].harlicValue, 1000000000000000), harlics[tokenIndex].publicEquity);
 
     return (tokenIndex, harlicValue, publicEquity, acquisitionPrice);
-  }
-
-  function divTest (uint256 _first, uint256 _second) public returns (uint256) {
-      return SafeMath.div(_first, _second);
   }
 
   function() public payable {
@@ -579,16 +546,5 @@ contract ERC721HarbergerLicense is ERC721, ERC721BasicToken {
 
   }
 
-  function claimDividend(address _address) public payable {
-
-      uint256 allTimeStake = SafeMath.div(paymentsFromAddress[_address], totalKReceipts);
-      uint256 claimableStake = SafeMath.sub(allTimeStake, payoutsToAddress[_address]);
-
-      _address.transfer(claimableStake);
-
-      payoutsToAddress[_address] += claimableStake;
-      payoutsTotal += claimableStake;
-
-  }
 
 }
